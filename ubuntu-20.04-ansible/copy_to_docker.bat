@@ -1,0 +1,1 @@
+docker cp ubuntu-2004-ansible_controller_1:/ansible .

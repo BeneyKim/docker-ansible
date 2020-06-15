@@ -1,0 +1,32 @@
+version: '3.3'
+
+services:
+
+  controller:
+    image: bhkim81/ubuntu-20.04-ansible:0.0.3
+    ports:
+      - "10022:22"
+      - "10080:80"
+      - "10443:443"
+      - "18000:8000"
+      - "18080:8080"  
+
+    restart: always
+    volumes:
+      - controller:/ansible
+  
+  target:
+    image: bhkim81/ubuntu-20.04-ssh:0.0.2
+    restart: always
+    ports:
+      - "22"
+      - "80"
+      - "433"
+      - "8000"
+      - "8080"
+    volumes:
+      - target:/backup
+      
+volumes:
+  controller:
+  target:

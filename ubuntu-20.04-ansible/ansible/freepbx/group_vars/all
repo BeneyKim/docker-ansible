@@ -1,0 +1,23 @@
+---
+
+asterisk_version: 16.9.0
+bcg729_version: 1.0.4
+spandsp_version: 20180108
+
+freepbx_version: 15.0.16.55
+mariaodbc_version: 2.0.19
+
+rtp_start: 18000
+rtp_finish: 18100
+admin_password: admin123
+use_chan_sip: false
+enable_auto_restore: true
+disable_signature_check: true
+mariadb_remote_root_password: admin123
+sip_nat_ip: ""
+certificate_domain: pbx.ntel.ml
+
+turn_server: coturn.ntel.ml:3478
+turn_username: USERNAME
+turn_password: PASSWORD
+

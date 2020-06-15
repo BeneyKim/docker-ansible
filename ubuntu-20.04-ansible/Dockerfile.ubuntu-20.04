@@ -1,7 +1,8 @@
 FROM ubuntu:20.04
-LABEL maintainer="diodonfrost <diodon.frost@diodonfrost.me>"
+LABEL maintainer="beney <bhkim81.kim@gmail.com>"
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV TERRAFORM_VERSION=0.12.26
 
 RUN apt-get update && apt-get install -y \
     git \
@@ -15,6 +16,9 @@ RUN apt-get update && apt-get install -y \
     rsync \
     sudo \
     fuse snapd snap-confine squashfuse \
+	iputils-ping net-tools dnsutils tcpdump vim \
+	sshpass \
+	wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure udev for docker integration
@@ -22,4 +26,19 @@ RUN dpkg-divert --local --rename --add /sbin/udevadm && ln -s /bin/true /sbin/ud
 
 RUN echo "[local]\nlocalhost ansible_connection=local" > /etc/ansible/hosts
 
+# Install AWS-CLI
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
+	unzip awscliv2.zip && \
+	./aws/install && \
+	rm awscliv2.zip
+
+# Install Terraform
+RUN wget --quiet https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip && \
+	unzip terraform_${TERRAFORM_VERSION}_linux_amd64.zip -d /usr/bin && \
+	rm terraform_${TERRAFORM_VERSION}_linux_amd64.zip
+
+EXPOSE 22 80 433 8000 8080
+
 ENTRYPOINT ["/sbin/init"]
+
+VOLUME [ "/ansible" ]

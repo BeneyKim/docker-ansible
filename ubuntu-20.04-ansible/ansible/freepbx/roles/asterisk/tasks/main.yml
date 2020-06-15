@@ -1,0 +1,234 @@
+- name: Install build tools
+  apt:
+    pkg:
+      - autoconf
+      - automake
+      - bison
+      - build-essential
+      - doxygen
+      - flex
+      - libasound2-dev
+      - libcurl4-openssl-dev
+      - libedit-dev
+      - libical-dev
+      - libiksemel-dev
+      - libjansson-dev
+      - libncurses5-dev
+      - libneon27-dev
+      - libnewt-dev
+      - libogg-dev 
+      - libresample1-dev 
+      - libspandsp-dev
+      - libsqlite3-dev
+      - libsrtp2-dev
+      - libssl-dev
+      - libtiff-dev
+      - libtool-bin
+      - libvorbis-dev 
+      - libxml2-dev
+        #      - linux-headers-amd64
+      - python-dev
+      - subversion
+      - unixodbc-dev 
+      - uuid-dev
+      - git
+      - curl
+      - wget
+      - libsqlite3-dev 
+      - gnupg
+      - ca-certificates
+      - unzip
+    install_recommends: n
+
+- name: Add asterisk group
+  group:
+    name: asterisk
+    gid: 2600
+    state: present
+
+- name: Add asterisk user
+  user:
+    name: asterisk
+    uid: 2600
+    group: asterisk
+    comment: Asterisk User
+    password: $6$ZK28n1AVpMd$kQhUZO2w.uqRWnVWWquB.cm.N1sXGaKo3eZORX9qmDIGcB14PG8sGfk3m5J0dFNwvuzbufPTkd8siOxLxEMVr/
+    state: present
+
+- name: Make Download Directory
+  file:
+    path: /download
+    state: directory
+
+# SpanDSP
+- name: SpanDSP - Make Build Directory (1/5)
+  file:
+    path: /usr/src/spandsp
+    state: directory
+
+- name: SpanDSP - Download Source (2/5)
+  get_url:
+    url: http://sources.buildroot.net/spandsp/spandsp-{{ spandsp_version }}.tar.gz
+    dest: /download/spandsp-{{ spandsp_version }}.tar.gz
+  register: spandsp_source
+
+- name: SpanDSP - Unarchive (3/5)
+  unarchive:
+    src: /download/spandsp-{{ spandsp_version }}.tar.gz
+    dest: /usr/src/spandsp
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+  when: spandsp_source.changed
+  register: spandsp_source_unpack
+
+- name: SpanDSP - Configure (4/5)
+  shell: ./configure
+  args:
+    chdir: /usr/src/spandsp
+  when: spandsp_source_unpack.changed
+  register: spandsp_configure
+
+- name: SpanDSP - Install (5/5)
+  shell: make && make install
+  args:
+    chdir: /usr/src/spandsp
+  when: spandsp_configure.changed
+ 
+# Asterisk
+- name: Asterisk - Make Build Directory (1/7)
+  file:
+    path: /usr/src/asterisk
+    state: directory
+
+- name: Asterisk - Download Source (2/7)
+  get_url:
+    url: http://downloads.asterisk.org/pub/telephony/asterisk/releases/asterisk-{{ asterisk_version }}.tar.gz 
+    dest: /download/asterisk-{{ asterisk_version }}.tar.gz
+  register: asterisk_source
+
+- name: Asterisk - Unarchive (3/7)
+  unarchive:
+    src: /download/asterisk-{{ asterisk_version }}.tar.gz
+    dest: /usr/src/asterisk
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+  when: asterisk_source.changed
+  register: asterisk_source_unpack
+
+- name: Asterisk - Configure (4/7)
+  shell: make distclean && contrib/scripts/get_mp3_source.sh && ./configure --with-resample --with-pjproject-bundled --with-jansson-bundled --with-ssl=ssl --with-srtp
+  args:
+    chdir: /usr/src/asterisk
+  when: asterisk_source_unpack.changed
+  register: asterisk_configure
+
+- name: Asterisk - Install MenuSelect (5/7)
+  shell: make menuselect/menuselect menuselect-tree menuselect.makeopts 
+  args:
+    chdir: /usr/src/asterisk
+  when: asterisk_configure.changed
+
+- name: Asterisk - MenuSelect (6/7)
+  shell: menuselect/menuselect --disable BUILD_NATIVE --enable app_confbridge -enable app_fax --enable app_macro --enable codec_opus --enable codec_silk --enable format_mp3 --enable BETTER_BACKTRACES --disable MOH-OPSOUND-WAV --enable MOH-OPSOUND-GSM
+  args:
+    chdir: /usr/src/asterisk
+  when: asterisk_configure.changed
+  register: asterisk_menuselect
+
+- name: Asterisk - Install (7/7)
+  shell: make && make install && make install-headers && make config && ldconfig 
+  args:
+    chdir: /usr/src/asterisk
+  when: asterisk_menuselect.changed
+
+# G729
+- name: G729 - Make Build Directory (1/5)
+  file:
+    path: /usr/src/bcg729
+    state: directory
+
+- name: G729 - Download Source (2/5)
+  get_url:
+    url: https://github.com/BelledonneCommunications/bcg729/archive/{{ bcg729_version }}.tar.gz
+    dest: /download/bcg729-{{ bcg729_version }}.tar.gz
+    checksum: sha1:3848955c15668963a8a9acc70f9272b9c70519e1
+  register: g729_source
+
+- name: G729 - Unarchive (3/5)
+  unarchive:
+    src: /download/bcg729-{{ bcg729_version }}.tar.gz
+    dest: /usr/src/bcg729
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+  when: g729_source.changed
+  register: g729_source_unpack
+
+- name: G729 - Configure (4/5)
+  shell: ./autogen.sh && ./configure --libdir=/lib
+  args:
+    chdir: /usr/src/bcg729
+  when: g729_source.changed
+  register: g729_configure
+
+- name: G729 - Install (5/5)
+  shell: make && make install
+  args:
+    chdir: /usr/src/bcg729
+  when: g729_configure.changed
+
+- name: Asterisk G72X - Make Build Directory (1/5)
+  file:
+    path: /usr/src/asterisk-g72x
+    state: directory
+
+- name: Asterisk G72X - Download Source (2/5)
+  get_url:
+    url: https://bitbucket.org/arkadi/asterisk-g72x/get/master.tar.gz
+    dest: /download/asterisk-g72x.tar.gz
+    checksum: sha1:4959d00d2277c14c5885af542bc116045b459c10
+  register: asterisk_g72x_source
+
+- name: Asterisk G72X - Unarchive (3/5)
+  unarchive:
+    src: /download/asterisk-g72x.tar.gz
+    dest: /usr/src/asterisk-g72x
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+  when: asterisk_g72x_source.changed
+  register: asterisk_g72x_source_unpack
+
+- name: Asterisk G72X - Configure (4/5)
+  shell: ./autogen.sh && ./configure  --with-bcg729 --enable-penryn
+  args:
+    chdir: /usr/src/asterisk-g72x
+  when: asterisk_g72x_source.changed
+  register: asterisk_g72x_configure
+
+- name: Asterisk G72X - Install (5/5)
+  shell: make && make install
+  args:
+    chdir: /usr/src/asterisk-g72x
+  when: asterisk_g72x_configure.changed
+
+- name: Change Permission
+  file:
+    path: "{{ item }}"
+    owner: asterisk
+    group: asterisk
+  with_items:
+    - /var/run/asterisk
+    - /etc/asterisk
+    - /var/lib/asterisk
+    - /var/log/asterisk
+    - /var/spool/asterisk
+    - /var/run/asterisk
+    - /usr/lib/asterisk
+
+- name: Touch Files
+  file:
+    path: "{{ item }}"
+    state: touch
+  with_items:
+    - /etc/asterisk/modules.conf
+    - /etc/asterisk/cdr.conf
+

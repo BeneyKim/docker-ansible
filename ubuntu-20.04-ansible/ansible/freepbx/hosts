@@ -1,0 +1,7 @@
+[targets]
+# ubuntu-2004-ansible_target_[1:2]
+ubuntu-2004-ansible_target_1
+
+[targets:vars]
+ansible_user=root
+ansible_password=ansible

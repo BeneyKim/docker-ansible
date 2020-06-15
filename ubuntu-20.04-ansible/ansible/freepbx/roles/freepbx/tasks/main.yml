@@ -1,0 +1,284 @@
+- name: Add APT Repository 
+  apt_repository:
+    repo: ppa:ondrej/php
+
+- name: Install build tools
+  apt:
+    pkg:
+      - curl
+      - wget
+      - software-properties-common
+      - build-essential
+      - apache2 
+      - mariadb-server 
+      - mariadb-client 
+      - bison 
+      - flex
+      - php5.6
+      - php5.6-curl
+      - php5.6-cli 
+      - php5.6-mysql 
+      - php-pear 
+      - php5.6-gd 
+      - php5.6-xml
+      - php5.6-mbstring
+      - nodejs
+      - yarn 
+      - cron 
+      - gettext 
+      - libicu-dev 
+      - pkg-config
+      - libsrtp2-dev
+      - tcpdump
+      - tcpflow
+      - whois 
+      - sipsak 
+      - sngrep 
+      - vim 
+      - net-tools 
+      - dnsutils
+      - ssl-cert
+    install_recommends: n
+
+- name: Make Download Directory
+  file:
+    path: /download
+    state: directory
+
+- name: Make Runtime Directory
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: asterisk
+    group: asterisk
+  with_items:
+    - /var/spool/asterisk/monitor
+    - /backup
+    - /etc/asterisk/keys
+
+
+    # PHP
+- name: MariaDB ODBC - Make Build Directory (1/7)
+  file:
+    path: /usr/src/mariadb-connector
+    state: directory
+
+- name: MariaDB ODBC - Download Source (2/7)
+  get_url:
+    url: https://downloads.mariadb.com/Connectors/odbc/connector-odbc-{{ mariaodbc_version }}/mariadb-connector-odbc-{{ mariaodbc_version }}-ga-debian-x86_64.tar.gz
+    dest: /download/mariadb-connector-odbc-{{ mariaodbc_version }}-ga-debian-x86_64.tar.gz
+    checksum: sha1:54f004bd0e983e52150a2a3b1f8c1cba5b71a950
+  register: maria_odbc_source
+
+- name: MariaDB ODBC - Unarchive (3/7)
+  unarchive:
+    src: /download/mariadb-connector-odbc-{{ mariaodbc_version }}-ga-debian-x86_64.tar.gz
+    dest: /usr/src/mariadb-connector
+    remote_src: yes
+  when: maria_odbc_source.changed
+  register: maria_odbc_source_unpack
+
+- name: MariaDB ODBC - Make Lib Directory (4/7)
+  file:
+    path: /usr/lib/x86_64-linux-gnu/odbc
+    state: directory
+
+- name: MariaDB ODBC - Install (5/7)
+  copy:
+    src: /usr/src/mariadb-connector/lib/libmaodbc.so
+    dest: /usr/lib/x86_64-linux-gnu/odbc/libmaodbc.so
+    remote_src: yes
+  when: maria_odbc_source_unpack.changed
+
+- name: MariaDB ODBC - Remove Safe Config (6/7)
+  file:
+    path: /etc/mysql/mariadb.conf.d/50-mysqld_safe.cnf
+    state: absent
+
+- name: MariaDB ODBC - Update Bind Config (7/7)
+  replace:
+    path: /etc/mysql/mariadb.conf.d/50-server.cnf
+    regexp: "^bind-address"
+    replace: "#bindaddress"
+
+- name: FreePBX - Make Build Directory (1/7)
+  file:
+    path: /usr/src/freepbx
+    state: directory
+
+- name: FreePBX - Download Source (2/7)
+  get_url:
+    url: https://github.com/FreePBX/framework/archive/release/{{ freepbx_version }}.tar.gz
+    dest: /download/freepbx-{{ freepbx_version }}.tar.gz
+    checksum: sha1:e5057ccdfa20c83d7350cd237ff677b7788a55cf
+  register: freepbx_source
+
+- name: FreePBX - Unarchive (3/7)
+  unarchive:
+    src: /download/freepbx-{{ freepbx_version }}.tar.gz
+    dest: /usr/src/freepbx
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+  # when: freepbx_source.changed
+  register: freepbx_source_unpack
+
+- name: FreePBX - Copy ODBC INI (4/7)
+  template:
+    src: odbc.ini.j2
+    dest: /etc/odbc.ini
+
+- name: FreePBX - Copy ODBCi INST INI (5/7)
+  template:
+    src: odbcinst.ini.j2
+    dest: /etc/odbcinst.ini
+
+- name: FreePBX - Update Memory Limit (6/7)
+  replace:
+    path: /etc/php/5.6/apache2/php.ini
+    regexp: "^memory_limit = 128M"
+    replace: "memory_limit = 256M"
+
+- name: FreePBX - Update Memory Limit (7/7)
+  replace:
+    path: /etc/php/5.6/apache2/php.ini
+    regexp: "(^upload_max_filesize = ).*"
+    replace: "upload_max_filesize = 120M"
+
+- name: FreePBX - Make Default SSL Cert
+  shell: make-ssl-cert generate-default-snakeoil
+  args:
+    chdir: /usr/src/freepbx
+
+- name: FreePBX - Disable Apache Conf
+  shell: a2disconf other-vhosts-access-log.conf
+  args:
+    chdir: /usr/src/freepbx
+
+- name: FreePBX - Enable Apache Module
+  apache2_module:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - rewrite
+    - headers
+
+- name: FreePBX - Make Log Directory (1/7)
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - /var/log/asterisk
+    - /var/log/apache2
+    - /var/log/httpd
+
+- name: FreePBX - Start MySQL
+  service:
+    name: mysql
+    state: started
+
+- name: FreePBX - Copy INI
+  copy:
+    src: /etc/odbc.ini
+    dest: /usr/src/freepbx/installlib/files/odbc.ini
+    remote_src: yes
+
+- name: FreePBX - Start Asterisk
+  shell: ./start_asterisk start
+  args:
+    chdir: /usr/src/freepbx
+
+- name: FreePBX - Wait 3 Seconds
+  pause:
+    seconds: 3
+
+- name: FreePBX - Install
+  shell: ./install -n
+  args:
+    chdir: /usr/src/freepbx
+
+- name: FreePBX - Update Modules
+  shell: fwconsole chown && fwconsole ma upgradeall && fwconsole ma downloadinstall backup bulkhandler ringgroups timeconditions ivr restapi cel configedit asteriskinfo certman ucp webrtc
+  args:
+    chdir: /usr/src/freepbx
+
+- name: FreePBX - Stop MySQL
+  service:
+    name: mysql
+    state: stopped
+
+- name: FreePBX - GPC Import
+  shell: gpg --refresh-keys --keyserver hkp://keyserver.ubuntu.com:80 && gpg --import /var/www/html/admin/libraries/BMO/9F9169F4B33B4659.key && gpg --import /var/www/html/admin/libraries/BMO/3DDB2122FE6D84F7.key && gpg --import /var/www/html/admin/libraries/BMO/86CE877469D2EAD9.key && gpg --import /var/www/html/admin/libraries/BMO/1588A7366BD35B34.key
+  args:
+    chdir: /usr/src/freepbx
+
+- name: FreePBX - Change Owner
+  file: 
+    path: /var/www/html
+    owner: asterisk
+    group: asterisk
+    state: directory
+    recurse: yes
+
+- name: FreePBX - Replace Apache EnvVar
+  replace:
+    path: /etc/apache2/envvars
+    regexp: "www-data"
+    replace: "asterisk"
+
+- name: FreePBX - Replace Apache ServerName
+  replace:
+    path: /etc/apache2/sites-available/000-default.conf
+    regexp: "(^#ServerName ).*"
+    replace: "ServerName localhost"
+
+- name: FreePBX - Copy Templates
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: 0755
+  with_items:
+    - {src: 'startup.sh.j2', dest: '/startup.sh'}
+    - {src: 'apply-initial-configs.sh.j2', dest: '/apply-initial-configs.sh'}
+    - {src: 'backup.sh.j2', dest: '/backup.sh'}
+    - {src: 'delete-old-recordings.sh.j2', dest: '/delete-old-recordings.sh'}
+    # - {src: 'basic-config.tar.gz', dest: '/basic-config.tar.gz'}
+    - {src: 'generate-sha1.php.j2', dest: '/generate-sha1.php'}
+    - {src: 'index.html.j2', dest: '/var/www/html/index.html'}
+    - {src: 'freepbx_chown.conf.j2', dest: '/etc/asterisk/freepbx_chown.conf'}
+    # - {src: 'pbx.ntel.ml.tar.gz', dest: '/pbx.ntel.ml.tar.gz'}
+ 
+- name: FreePBX - Copy Tar Files
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+    - {src: '/ansible/freepbx/roles/freepbx/templates/basic-config.tar.gz', dest: '/basic-config.tar.gz'}
+    - {src: '/ansible/freepbx/roles/freepbx/templates/pbx.ntel.ml.tar.gz', dest: '/pbx.ntel.ml.tar.gz'}
+
+- name: FreePBX - Enable Apache Site
+  shell: a2ensite default-ssl
+  args:
+    chdir: /usr/src/freepbx
+
+- name: FreePBX - Enable Apache Module2
+  apache2_module:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - ssl
+
+- name: FreePBX - Enable 
+  shell: ./startup.sh &
+  args:
+    chdir: /
+  environment:
+    RTP_START: " {{ rtp_start }}"
+    RTP_FINISH: "{{ rtp_finish }}"
+    ADMIN_PASSWORD: "{{ admin_password }}"
+    USE_CHAN_SIP: "{{ use_chan_sip }}"
+    ENABLE_AUTO_RESTORE: "{{ enable_auto_restore }}"
+    ENABLE_DELETE_OLD_RECORDINGS: true
+    DISABLE_SIGNATURE_CHECK: "{{ disable_signature_check }}"
+    MARIADB_REMOTE_ROOT_PASSWORD: "{{ mariadb_remote_root_password }}"
+    SIP_NAT_IP: "{{ sip_nat_ip }}"
+    CERTIFICATE_DOMAIN: "{{ certificate_domain }}"
